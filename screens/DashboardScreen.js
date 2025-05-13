@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const DashboardScreen = ({ route, navigation }) => {
   const [stressData, setStressData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [insights, setInsights] = useState([]);
   const screenWidth = Dimensions.get('window').width;
   
   useEffect(() => {
@@ -26,6 +27,11 @@ const DashboardScreen = ({ route, navigation }) => {
         }
         
         setStressData(data);
+        
+        // Generate insights based on the data
+        if (data.length > 0) {
+          generateInsights(data);
+        }
       } catch (error) {
         console.error('Failed to load stress data', error);
       } finally {
@@ -35,6 +41,138 @@ const DashboardScreen = ({ route, navigation }) => {
     
     loadData();
   }, [route.params?.newEntry]);
+  
+  const generateInsights = (data) => {
+    const generatedInsights = [];
+    
+    // Get the latest entry
+    const latestEntry = [...data].sort((a, b) => 
+      new Date(b.timestamp) - new Date(a.timestamp)
+    )[0];
+    
+    const latestScore = latestEntry.stressScore;
+    
+    // Get entries from the past week
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const recentEntries = data.filter(entry => 
+      new Date(entry.timestamp) >= oneWeekAgo
+    );
+    
+    // Calculate average stress for the past week
+    let weeklyAvg = 0;
+    if (recentEntries.length > 0) {
+      weeklyAvg = recentEntries.reduce((sum, entry) => sum + entry.stressScore, 0) / recentEntries.length;
+    }
+    
+    // Check if there's a trend
+    let stressTrend = null;
+    if (recentEntries.length >= 3) {
+      const sortedEntries = [...recentEntries].sort((a, b) => 
+        new Date(a.timestamp) - new Date(b.timestamp)
+      );
+      
+      const firstHalf = sortedEntries.slice(0, Math.floor(sortedEntries.length / 2));
+      const secondHalf = sortedEntries.slice(Math.floor(sortedEntries.length / 2));
+      
+      const firstHalfAvg = firstHalf.reduce((sum, entry) => sum + entry.stressScore, 0) / firstHalf.length;
+      const secondHalfAvg = secondHalf.reduce((sum, entry) => sum + entry.stressScore, 0) / secondHalf.length;
+      
+      if (secondHalfAvg - firstHalfAvg > 1) {
+        stressTrend = 'increasing';
+      } else if (firstHalfAvg - secondHalfAvg > 1) {
+        stressTrend = 'decreasing';
+      } else {
+        stressTrend = 'stable';
+      }
+    }
+    
+    // Generate insights based on the current stress level
+    if (latestScore > 7) {
+      generatedInsights.push({
+        id: 'high-stress',
+        title: '🚨 High Stress Alert',
+        text: 'Your stress levels are significantly elevated. Consider taking breaks and practicing deep breathing or meditation.'
+      });
+    } else if (latestScore < 3) {
+      generatedInsights.push({
+        id: 'low-stress',
+        title: '✅ Great Job!',
+        text: 'Your stress levels are low. Keep up the good work with your stress management techniques!'
+      });
+    } else {
+      generatedInsights.push({
+        id: 'moderate-stress',
+        title: '⚠️ Moderate Stress',
+        text: 'Your stress is at a moderate level. Try to incorporate more relaxation activities in your daily routine.'
+      });
+    }
+    
+    // Check sleep quality from latest survey
+    if (latestEntry.surveyResponses && latestEntry.surveyResponses[3] < 4) {
+      generatedInsights.push({
+        id: 'poor-sleep',
+        title: '💤 Sleep Focus Needed',
+        text: 'Your sleep quality appears to be affecting your stress levels. Try establishing a regular sleep schedule and avoiding screens before bedtime.'
+      });
+    }
+    
+    // Check focus difficulty from latest survey
+    if (latestEntry.surveyResponses && latestEntry.surveyResponses[5] > 7) {
+      generatedInsights.push({
+        id: 'focus-issues',
+        title: '🎯 Concentration Challenges',
+        text: 'You\'re having difficulty focusing. Try breaking tasks into smaller chunks and taking short breaks between focused work sessions.'
+      });
+    }
+    
+    // Check heart rate from sensor data
+    if (latestEntry.sensorData && latestEntry.sensorData.heartRate > 85) {
+      generatedInsights.push({
+        id: 'elevated-heart-rate',
+        title: '❤️ Elevated Heart Rate',
+        text: 'Your heart rate is higher than usual. Consider incorporating more physical activity or relaxation techniques to help regulate it.'
+      });
+    }
+    
+    // Add trend insights
+    if (stressTrend === 'increasing' && recentEntries.length >= 3) {
+      generatedInsights.push({
+        id: 'increasing-trend',
+        title: '📈 Increasing Stress Trend',
+        text: 'Your stress levels have been rising over the past week. Try to identify any new stressors in your life and address them early.'
+      });
+    } else if (stressTrend === 'decreasing' && recentEntries.length >= 3) {
+      generatedInsights.push({
+        id: 'decreasing-trend',
+        title: '📉 Improving Stress Trend',
+        text: 'Great news! Your stress levels have been decreasing over the past week. Keep up with the positive changes you\'ve made.'
+      });
+    }
+    
+    // If we have enough data points, compare to overall average
+    if (data.length >= 5) {
+      const overallAvg = data.reduce((sum, entry) => sum + entry.stressScore, 0) / data.length;
+      
+      if (latestScore > overallAvg + 2) {
+        generatedInsights.push({
+          id: 'above-average',
+          title: '⚠️ Above Your Average',
+          text: `Your current stress score (${latestScore.toFixed(1)}) is significantly higher than your overall average (${overallAvg.toFixed(1)}). This might be a good time to use your proven stress reduction techniques.`
+        });
+      } else if (latestScore < overallAvg - 2) {
+        generatedInsights.push({
+          id: 'below-average',
+          title: '🌟 Below Your Average',
+          text: `Your current stress score (${latestScore.toFixed(1)}) is significantly lower than your overall average (${overallAvg.toFixed(1)}). Whatever you're doing is working well!`
+        });
+      }
+    }
+    
+    // Limit to max 3 insights to avoid overwhelming the user
+    setInsights(generatedInsights.slice(0, 3));
+  };
   
   const prepareChartData = () => {
     // Sort data by date
@@ -154,33 +292,31 @@ const DashboardScreen = ({ route, navigation }) => {
       
       <View style={styles.insightsContainer}>
         <Text style={styles.insightsTitle}>AI Insights</Text>
-        {latestScore !== null ? (
+        {latestScore !== null && insights.length > 0 ? (
           <>
             <Text style={styles.insightText}>
               Based on your responses and sensor data, our AI model has identified the following insights:
             </Text>
             
-            {latestScore > 7 && (
-              <View style={styles.insight}>
-                <Text style={styles.insightTitle}>🚨 High Stress Alert</Text>
-                <Text>Your stress levels are significantly elevated. Consider taking breaks and practicing relaxation techniques.</Text>
+            {insights.map(insight => (
+              <View key={insight.id} style={styles.insight}>
+                <Text style={styles.insightTitle}>{insight.title}</Text>
+                <Text>{insight.text}</Text>
               </View>
-            )}
+            ))}
             
-            {latestScore > 5 && (
-              <View style={styles.insight}>
-                <Text style={styles.insightTitle}>💤 Sleep Focus</Text>
-                <Text>Your sleep quality appears to be affecting your stress levels. Try to improve your sleep hygiene.</Text>
-              </View>
-            )}
-            
-            {latestScore < 4 && (
-              <View style={styles.insight}>
-                <Text style={styles.insightTitle}>✅ Good Management</Text>
-                <Text>You're managing your stress well! Continue your current practices.</Text>
-              </View>
-            )}
-            
+            <TouchableOpacity 
+              style={styles.assessmentButton}
+              onPress={() => navigation.navigate('StressSurvey')}
+            >
+              <Text style={styles.assessmentButtonText}>Take New Assessment</Text>
+            </TouchableOpacity>
+          </>
+        ) : latestScore !== null ? (
+          <>
+            <Text style={styles.insightText}>
+              Our AI is analyzing your data. Complete more assessments for personalized insights.
+            </Text>
             <TouchableOpacity 
               style={styles.assessmentButton}
               onPress={() => navigation.navigate('StressSurvey')}
@@ -244,7 +380,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   chartTitle: {
-    padding: 15,
+    padding:15,
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
